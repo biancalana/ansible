@@ -66,7 +66,7 @@ options:
     description:
       - Ignore unknown file extensions within the directory.
       - This allows users to specify a directory containing vars files that are intermingled with non-vars files extension types
-        (e.g. a directory with a README in it and vars files).
+        (for example, a directory with a README in it and vars files).
     type: bool
     default: no
     version_added: "2.7"
@@ -90,7 +90,7 @@ extends_documentation_fragment:
     - action_core
 attributes:
     action:
-        details: While the action plugin does do some of the work it relies on the core engine to actually create the variables, that part cannot be overridden
+        details: While the action plugin does do some of the work it relies on the core engine to actually create the variables; that part cannot be overridden
         support: partial
     bypass_host_loop:
         support: none

@@ -129,6 +129,9 @@ def prepare_profiles[TEnvironmentConfig: EnvironmentConfig](
 
         ExitHandler.register(functools.partial(cleanup_profiles, host_state))
 
+        for pre_profile in host_state.profiles:
+            pre_profile.pre_provision()
+
         def provision(profile: HostProfile) -> None:
             """Provision the given profile."""
             profile.provision()
@@ -144,6 +147,7 @@ def prepare_profiles[TEnvironmentConfig: EnvironmentConfig](
 
     if not args.delegate:
         check_controller_python(args, host_state)
+        check_controller_powershell(args, host_state)
 
         if requirements:
             requirements(host_state.controller_profile)
@@ -179,6 +183,13 @@ def check_controller_python(args: EnvironmentConfig, host_state: HostState) -> N
         raise ApplicationError(f'Running under Python version {sys_version} instead of {expected_version}.')
 
     args.controller_python = controller_python
+
+
+def check_controller_powershell(args: EnvironmentConfig, host_state: HostState) -> None:
+    """Check the running environment to make sure it is what we expected."""
+    controller_powershell = host_state.controller_profile.powershell
+
+    args.controller_powershell = controller_powershell
 
 
 def cleanup_profiles(host_state: HostState) -> None:

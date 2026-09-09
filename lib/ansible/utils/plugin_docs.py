@@ -16,6 +16,7 @@ from ansible.module_utils.common.text.converters import to_native
 from ansible.parsing.plugin_docs import read_docstring
 from ansible.parsing.yaml.loader import AnsibleLoader
 from ansible.utils.display import Display
+from ansible.utils.sentinel import Sentinel
 from ansible._internal._datatag import _tags
 
 _FRAGMENTABLE = ('DOCUMENTATION', 'RETURN')
@@ -126,6 +127,10 @@ def remove_current_collection_from_versions_and_dates(fragment, collection_name,
     _process_versions_and_dates(fragment, is_module, return_docs, remove)
 
 
+class AnsibleFragmentError(AnsibleError):
+    pass
+
+
 def add_fragments(doc, filename, fragment_loader, is_module=False, section='DOCUMENTATION'):
 
     if section not in _FRAGMENTABLE:
@@ -175,7 +180,7 @@ def add_fragments(doc, filename, fragment_loader, is_module=False, section='DOCU
         add_collection_to_versions_and_dates(fragment, real_collection_name, is_module=is_module, return_docs=(section == 'RETURN'))
 
         if section == 'DOCUMENTATION':
-            # notes, seealso, options and attributes entries are specificly merged, but only occur in documentation section
+            # notes, seealso, options and attributes entries are specifically merged, but only occur in documentation section
             for doc_key in ['notes', 'seealso']:
                 if doc_key in fragment:
                     entries = fragment.pop(doc_key)
@@ -185,7 +190,7 @@ def add_fragments(doc, filename, fragment_loader, is_module=False, section='DOCU
                         doc[doc_key].extend(entries)
 
             if 'options' not in fragment and 'attributes' not in fragment:
-                raise Exception("missing options or attributes in fragment (%s), possibly misformatted?: %s" % (fragment_name, filename))
+                raise AnsibleFragmentError("missing options or attributes in fragment (%s), possibly misformatted?: %s" % (fragment_name, filename))
 
             # ensure options themselves are directly merged
             for doc_key in ['options', 'attributes']:
@@ -194,7 +199,7 @@ def add_fragments(doc, filename, fragment_loader, is_module=False, section='DOCU
                         try:
                             merge_fragment(doc[doc_key], fragment.pop(doc_key))
                         except Exception as e:
-                            raise AnsibleError("%s %s (%s) of unknown type: %s" % (to_native(e), doc_key, fragment_name, filename))
+                            raise AnsibleFragmentError("%s %s (%s) of unknown type: %s" % (to_native(e), doc_key, fragment_name, filename))
                     else:
                         doc[doc_key] = fragment.pop(doc_key)
 
@@ -202,25 +207,30 @@ def add_fragments(doc, filename, fragment_loader, is_module=False, section='DOCU
         try:
             merge_fragment(doc, fragment)
         except Exception as e:
-            raise AnsibleError("%s (%s) of unknown type: %s" % (to_native(e), fragment_name, filename))
+            raise AnsibleFragmentError("%s (%s) of unknown type: %s" % (to_native(e), fragment_name, filename))
 
     if unknown_fragments:
-        raise AnsibleError('unknown doc_fragment(s) in file {0}: {1}'.format(filename, to_native(', '.join(unknown_fragments))))
+        raise AnsibleFragmentError('unknown doc_fragment(s) in file {0}: {1}'.format(filename, to_native(', '.join(unknown_fragments))))
 
 
-def get_docstring(filename, fragment_loader, verbose=False, ignore_errors=False, collection_name=None, is_module=None, plugin_type=None):
+def get_docstring(filename, fragment_loader, verbose=False, ignore_errors=False, collection_name=None, is_module=Sentinel, plugin_type=None):
     """
     DOCUMENTATION can be extended using documentation fragments loaded by the PluginLoader from the doc_fragments plugins.
     """
 
+    if is_module is Sentinel:
+        is_module = None
+    else:
+        display.deprecated(
+            msg="The is_module argument is deprecated.",
+            version="2.25",
+            help_text="Use plugin_type='module' instead.",
+        )
     if is_module is None:
         if plugin_type is None:
             is_module = False
         else:
             is_module = (plugin_type == 'module')
-    else:
-        # TODO deprecate is_module argument, now that we have 'type'
-        pass
 
     data = read_docstring(filename, verbose=verbose, ignore_errors=ignore_errors)
 
@@ -331,7 +341,13 @@ def get_plugin_docs(plugin, plugin_type, loader, fragment_loader, verbose):
     collection_name = context.plugin_resolved_collection
 
     try:
-        docs = get_docstring(filename, fragment_loader, verbose=verbose, collection_name=collection_name, plugin_type=plugin_type)
+        docs = get_docstring(
+            filename=filename,
+            fragment_loader=fragment_loader,
+            verbose=verbose,
+            collection_name=collection_name,
+            plugin_type=plugin_type,
+        )
     except Exception as ex:
         raise AnsibleParserError(f'{plugin_type} plugin {plugin!r} did not contain a DOCUMENTATION attribute in {filename!r}.') from ex
 
@@ -339,7 +355,13 @@ def get_plugin_docs(plugin, plugin_type, loader, fragment_loader, verbose):
     if not docs[0]:
         for newfile in _find_adjacent(filename, plugin, C.DOC_EXTENSIONS):
             try:
-                docs = get_docstring(newfile, fragment_loader, verbose=verbose, collection_name=collection_name, plugin_type=plugin_type)
+                docs = get_docstring(
+                    filename=newfile,
+                    fragment_loader=fragment_loader,
+                    verbose=verbose,
+                    collection_name=collection_name,
+                    plugin_type=plugin_type,
+                )
                 filename = newfile
                 if docs[0] is not None:
                     break
